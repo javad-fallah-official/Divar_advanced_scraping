@@ -95,7 +95,24 @@ def scrape_post_details(url: str, headless: bool = True, non_negotiable: bool = 
             title = page.locator("h1").first.inner_text()
             title = clean_text(title)
         except Exception:
-            # Fallback by heuristics: first significant line
+            title = None
+        # Additional fallbacks for title
+        if not title:
+            # Try <meta property="og:title">
+            try:
+                ogt = page.locator("meta[property='og:title']").first.get_attribute("content")
+                if ogt:
+                    title = clean_text(ogt)
+            except Exception:
+                pass
+        if not title and isinstance(data, dict):
+            for k in ("title", "name", "headline"):
+                val = data.get(k)
+                if isinstance(val, str) and val.strip():
+                    title = clean_text(val)
+                    break
+        if not title:
+            # Fallback by heuristics: first significant line of page body
             title = clean_text(body_text.split("\n")[0]) if body_text else None
 
         # Location line (e.g., "دقایقی پیش در تهران، امامت")
@@ -148,4 +165,3 @@ def scrape_post_details(url: str, headless: bool = True, non_negotiable: bool = 
     }
 
     return result
-

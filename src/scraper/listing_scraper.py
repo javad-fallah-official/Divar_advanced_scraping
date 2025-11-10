@@ -34,12 +34,24 @@ def collect_listing_urls(
         context = browser.new_context(user_agent=ua, viewport={"width": 1280, "height": 900})
         page = context.new_page()
         page.goto(start_url, wait_until="domcontentloaded")
+        # Give dynamic content some time to settle
+        try:
+            page.wait_for_load_state("networkidle", timeout=5000)
+        except Exception:
+            pass
+        try:
+            page.wait_for_selector("a[href*='/v/']", timeout=7000)
+        except Exception:
+            pass
 
         stall_rounds = 0
         last_count = 0
-        while len(urls) < max_items and stall_rounds < 8:
+        while len(urls) < max_items and stall_rounds < 30:
             # Collect anchors and filter product links
-            anchors = page.eval_on_selector_all("a", "els => els.map(e => e.getAttribute('href'))")
+            anchors = page.eval_on_selector_all(
+                "a[href]",
+                "els => els.map(e => (e.href || e.getAttribute('href')))"
+            )
             for href in anchors:
                 if not href:
                     continue
@@ -50,8 +62,11 @@ def collect_listing_urls(
                     urls.add(href)
 
             # Scroll down to load more
-            page.mouse.wheel(0, 2500)
-            time.sleep(1.2)
+            try:
+                page.mouse.wheel(0, 3000)
+            except Exception:
+                pass
+            time.sleep(2.0)
 
             if len(urls) == last_count:
                 stall_rounds += 1
@@ -66,4 +81,3 @@ def collect_listing_urls(
     if len(out) > max_items:
         out = out[:max_items]
     return out
-

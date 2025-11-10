@@ -8,10 +8,14 @@ from scraper.db import Database
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Divar Tehran motorcycles (Honda) scraper")
+    parser = argparse.ArgumentParser(description="Divar Tehran motorcycles scraper")
     parser.add_argument("--city", default="tehran", help="City slug, e.g., tehran")
     parser.add_argument("--category", default="motorcycles", help="Category slug, e.g., motorcycles")
-    parser.add_argument("--brand", default="honda", help="Brand slug under category, e.g., honda")
+    parser.add_argument(
+        "--brand",
+        default="honda",
+        help="Brand slug under category (e.g., honda). Use 'none' or 'all' to scrape all brands.",
+    )
     parser.add_argument("--non-negotiable", dest="non_negotiable", default="true", choices=["true", "false"], help="Filter out negotiables")
     parser.add_argument("--max-items", dest="max_items", type=int, default=200, help="Max listing URLs to collect")
     parser.add_argument("--headless", default="true", choices=["true", "false"], help="Run browser headless or not")
@@ -22,12 +26,15 @@ def main():
     args = parse_args()
     non_negotiable = args.non_negotiable.lower() == "true"
     headless = args.headless.lower() == "true"
+    # Allow disabling brand filter with --brand none|all or empty string
+    brand_arg = (args.brand or "").strip().lower()
+    brand = None if brand_arg in {"", "none", "all"} else args.brand
 
     print("Collecting listing URLs...")
     listing_urls = collect_listing_urls(
         city=args.city,
         category=args.category,
-        brand=args.brand,
+        brand=brand,
         non_negotiable=non_negotiable,
         max_items=args.max_items,
         headless=headless,
@@ -62,4 +69,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

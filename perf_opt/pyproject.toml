@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=65", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "perf_opt"
+version = "0.1.0"
+description = "High-performance indexing and query toolkit for Divar-like posts"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "Proprietary"}
+authors = [{name = "Your Team"}]
+dependencies = [
+    "numpy>=1.23",
+    "numba>=0.58; python_version<'3.13'",
+    "matplotlib>=3.7",
+    "seaborn>=0.12",
+    "line_profiler>=4.1; python_version<'3.13'",
+]
+
+[project.urls]
+homepage = "https://example.com/perf_opt"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.scripts]
+perf_opt = "perf_opt.cli:main"
+
