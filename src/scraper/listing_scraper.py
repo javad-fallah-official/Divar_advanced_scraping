@@ -5,7 +5,7 @@ import time
 from playwright.sync_api import sync_playwright
 
 from .utils import random_user_agent
-from .api_listing import collect_listing_urls_via_api
+from .api_listing import collect_listing_urls_via_api, collect_listing_urls_via_http, _extract_urls_from_json
 import re
 
 
@@ -31,7 +31,14 @@ def collect_listing_urls(
     ua = random_user_agent()
     urls: set[str] = set()
 
-    # Try API-first; if it yields results, return early
+    # Try HTTP SSR-first; if it yields results, return early
+    try:
+        http_urls = collect_listing_urls_via_http(city, category, brand, non_negotiable, max_items)
+        if http_urls:
+            return http_urls[:max_items]
+    except Exception:
+        pass
+    # Then try API; if it yields results, return
     try:
         api_urls = collect_listing_urls_via_api(city, category, brand, non_negotiable, max_items)
         if api_urls:
@@ -53,6 +60,11 @@ def collect_listing_urls(
         # Give dynamic content some time to settle
         try:
             page.wait_for_load_state("networkidle", timeout=5000)
+        except Exception:
+            pass
+        # Try to accept consent if present
+        try:
+            page.locator("button:has-text('قبول')").first.click(timeout=1500)
         except Exception:
             pass
         try:
@@ -87,11 +99,29 @@ def collect_listing_urls(
             if raw_state:
                 for m in re.findall(r"https://divar\.ir/v/[\w%\-_/]+", raw_state):
                     urls.add(m)
+            # Parse Next.js SSR data
+            try:
+                next_raw = page.locator("script#__NEXT_DATA__").first.inner_text()
+                if next_raw:
+                    try:
+                        import json as _json
+                        next_obj = _json.loads(next_raw)
+                        next_urls = _extract_urls_from_json(next_obj)
+                        for u in next_urls:
+                            urls.add(u)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
             # Also scan HTML text for links
             try:
                 html = page.content()
+                # absolute
                 for m in re.findall(r"https://divar\.ir/v/[\w%\-_/]+", html):
                     urls.add(m)
+                # relative
+                for m in re.findall(r"/v/[\w%\-_/]+", html):
+                    urls.add(urljoin("https://divar.ir", m))
             except Exception:
                 pass
 
@@ -101,7 +131,7 @@ def collect_listing_urls(
                 page.keyboard.press("End")
             except Exception:
                 pass
-            time.sleep(2.0)
+            time.sleep(2.0 + (0.5 * (stall_rounds % 3)))
 
             if len(urls) == last_count:
                 stall_rounds += 1

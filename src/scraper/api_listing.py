@@ -3,8 +3,6 @@ from __future__ import annotations
 from typing import List, Optional
 import re
 
-import requests
-
 from .utils import random_user_agent
 
 
@@ -36,6 +34,11 @@ def collect_listing_urls_via_api(
     non_negotiable: bool,
     max_items: int = 200,
 ) -> List[str]:
+    # Import requests lazily to avoid hard dependency
+    try:
+        import requests  # type: ignore
+    except Exception:
+        return []
     # Try a set of known endpoints observed in Divar clients
     endpoints = [
         f"https://api.divar.ir/v8/web-search/{city}/{category}",
@@ -83,3 +86,59 @@ def collect_listing_urls_via_api(
     # If API path fails, return empty list and let caller fallback to DOM scraping
     return []
 
+
+def collect_listing_urls_via_http(
+    city: str,
+    category: str,
+    brand: Optional[str],
+    non_negotiable: bool,
+    max_items: int = 200,
+) -> List[str]:
+    # Import requests lazily
+    try:
+        import requests  # type: ignore
+    except Exception:
+        return []
+
+    ua = random_user_agent()
+    headers = {
+        "User-Agent": ua,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Referer": "https://divar.ir/",
+    }
+
+    base = f"https://divar.ir/s/{city}/{category}" + (f"/{brand}" if brand else "")
+    if non_negotiable:
+        sep = "?"
+        base = f"{base}{sep}non-negotiable=true"
+
+    try:
+        resp = requests.get(base, headers=headers, timeout=15)
+        if resp.status_code != 200:
+            return []
+        html = resp.text
+        urls: set[str] = set()
+        # absolute
+        for m in re.findall(r"https://divar\.ir/v/[\w%\-_/]+", html):
+            urls.add(m)
+        # relative
+        for m in re.findall(r"/v/[\w%\-_/]+", html):
+            urls.add(f"https://divar.ir{m}")
+
+        # Parse Next.js SSR JSON if present
+        m = re.search(r"<script id=\"__NEXT_DATA__\" type=\"application/json\">(.*?)</script>", html, re.S)
+        if m:
+            try:
+                import json as _json
+                data = _json.loads(m.group(1))
+                for u in _extract_urls_from_json(data):
+                    urls.add(u)
+            except Exception:
+                pass
+
+        if urls:
+            return list(urls)[:max_items]
+    except Exception:
+        return []
+
+    return []

@@ -78,6 +78,11 @@ def _value_after(label: str, body_text: str) -> Optional[str]:
 
 
 def scrape_post_details(url: str, headless: bool = True, non_negotiable: bool = True) -> Optional[Dict[str, Any]]:
+    # First, try HTTP-based scraping to avoid dynamic gating
+    http_first = scrape_post_details_http(url, non_negotiable)
+    if http_first:
+        return http_first
+
     ua = random_user_agent()
 
     with sync_playwright() as p:
@@ -171,3 +176,98 @@ def scrape_post_details(url: str, headless: bool = True, non_negotiable: bool = 
     }
 
     return result
+
+
+def _inner_text_from_html(html: str) -> str:
+    # Very rough HTML to text conversion for heuristics
+    text = re.sub(r"<script[\s\S]*?</script>", " ", html, flags=re.I)
+    text = re.sub(r"<style[\s\S]*?</style>", " ", text, flags=re.I)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def scrape_post_details_http(url: str, non_negotiable: bool = True) -> Optional[Dict[str, Any]]:
+    try:
+        import requests  # type: ignore
+    except Exception:
+        return None
+
+    ua = random_user_agent()
+    headers = {
+        "User-Agent": ua,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Referer": "https://divar.ir/",
+    }
+
+    try:
+        resp = requests.get(url, headers=headers, timeout=15)
+        if resp.status_code != 200:
+            return None
+        html = resp.text
+    except Exception:
+        return None
+
+    title = None
+    # og:title
+    m_og = re.search(r"<meta[^>]+property=\"og:title\"[^>]+content=\"(.*?)\"", html, re.I)
+    if m_og:
+        title = clean_text(m_og.group(1))
+    # ld+json
+    if not title:
+        m_ld = re.search(r"<script[^>]+type=\"application/ld\+json\"[^>]*>([\s\S]*?)</script>", html, re.I)
+        if m_ld:
+            try:
+                data = json.loads(m_ld.group(1))
+                if isinstance(data, dict):
+                    for k in ("name", "headline", "title"):
+                        if isinstance(data.get(k), str) and data.get(k).strip():
+                            title = clean_text(data[k])
+                            break
+                elif isinstance(data, list) and data:
+                    d0 = data[0]
+                    if isinstance(d0, dict):
+                        for k in ("name", "headline", "title"):
+                            val = d0.get(k)
+                            if isinstance(val, str) and val.strip():
+                                title = clean_text(val)
+                                break
+            except Exception:
+                pass
+
+    body_text = _inner_text_from_html(html)
+    if not title and body_text:
+        title = clean_text(body_text.split(" ")[0])
+
+    city, district = parse_location_line(body_text)
+    price_text = _value_after("قیمت", body_text)
+    price_toman = parse_price_toman(price_text or "") if price_text else None
+    mileage_text = _value_after("کارکرد", body_text)
+    mileage_km = parse_mileage_km(mileage_text or "") if mileage_text else None
+    year_text = _value_after("مدل (سال تولید)", body_text) or _value_after("مدل", body_text)
+    model_year_jalali = parse_model_year_jalali(year_text or "") if year_text else None
+    color_text = _value_after("رنگ", body_text)
+    color = clean_text(color_text) if color_text else None
+    brand_text = _value_after("برند", body_text)
+    brand = clean_text(brand_text) if brand_text else None
+    desc_text = _value_after("توضیحات", body_text)
+    description = clean_text(desc_text) if desc_text else None
+
+    if not title:
+        return None
+
+    return {
+        "url": url,
+        "title": title,
+        "city": city,
+        "district": district,
+        "brand": brand,
+        "model_year_jalali": model_year_jalali,
+        "mileage_km": mileage_km,
+        "color": color,
+        "price_toman": price_toman,
+        "negotiable": 0 if non_negotiable else None,
+        "description": description,
+        "posted_at": None,
+        "scraped_at": now_iso(),
+    }

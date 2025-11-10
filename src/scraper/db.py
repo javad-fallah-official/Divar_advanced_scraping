@@ -32,6 +32,10 @@ class Database:
             self.conn.executescript(SCHEMA_SQL)
 
     def upsert_post(self, post: Dict[str, Any]) -> str:
+        # Check existence BEFORE upsert to correctly report inserted vs updated
+        url = post.get("url")
+        existed_before = self.exists(url)
+
         cols = [
             "url",
             "title",
@@ -52,13 +56,10 @@ class Database:
         set_clause = ", ".join([f"{c}=excluded.{c}" for c in cols if c != "url"]) 
         sql = f"INSERT INTO posts ({','.join(cols)}) VALUES ({placeholders}) ON CONFLICT(url) DO UPDATE SET {set_clause};"
         with self.conn:
-            cur = self.conn.execute(sql, values)
-        # Heuristic: if row existed, it's an update; SQLite doesn't directly report it here
-        # We can check existence prior to upsert
-        exists = self.exists(post.get("url"))
-        return "updated" if exists else "inserted"
+            self.conn.execute(sql, values)
+
+        return "updated" if existed_before else "inserted"
 
     def exists(self, url: str) -> bool:
         cur = self.conn.execute("SELECT 1 FROM posts WHERE url=?", (url,))
         return cur.fetchone() is not None
-
