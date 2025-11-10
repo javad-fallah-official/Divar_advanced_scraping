@@ -98,9 +98,8 @@ def collect_tokens(city: str, category: str, brand: Optional[str], non_negotiabl
         tokens_db = _collect_tokens_from_playwright_db(city=city, brand=brand, non_negotiable=non_negotiable, max_items=max_items)
         if tokens_db:
             return tokens_db
-        raise RuntimeError(
-            f"Failed to fetch category '{category}'. Try '--category motorcycle' or update the library."
-        )
+        # Gracefully return empty list so CLI can continue without crashing
+        return []
 
     tokens: List[str] = []
     for post in posts:

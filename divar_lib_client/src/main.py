@@ -30,6 +30,10 @@ def main():
         non_negotiable=non_negotiable,
         max_items=args.max_items,
     )
+    if not tokens:
+        print(
+            "No tokens found via library category fetch. Try '--category motorcycle' or run the Playwright scraper to seed 'data/divar.db' for fallback."
+        )
     print(f"Collected {len(tokens)} tokens.")
 
     db = Database(db_path="data/divar_lib.db")
