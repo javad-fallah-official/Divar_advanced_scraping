@@ -5,6 +5,8 @@ import time
 from playwright.sync_api import sync_playwright
 
 from .utils import random_user_agent
+from .api_listing import collect_listing_urls_via_api
+import re
 
 
 def _build_listing_url(city: str, category: str, brand: str | None, non_negotiable: bool) -> str:
@@ -29,9 +31,23 @@ def collect_listing_urls(
     ua = random_user_agent()
     urls: set[str] = set()
 
+    # Try API-first; if it yields results, return early
+    try:
+        api_urls = collect_listing_urls_via_api(city, category, brand, non_negotiable, max_items)
+        if api_urls:
+            return api_urls[:max_items]
+    except Exception:
+        pass
+
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=headless)
-        context = browser.new_context(user_agent=ua, viewport={"width": 1280, "height": 900})
+        context = browser.new_context(
+            user_agent=ua,
+            viewport={"width": 390, "height": 844},
+            device_scale_factor=2,
+            is_mobile=True,
+            has_touch=True,
+        )
         page = context.new_page()
         page.goto(start_url, wait_until="domcontentloaded")
         # Give dynamic content some time to settle
@@ -47,10 +63,10 @@ def collect_listing_urls(
         stall_rounds = 0
         last_count = 0
         while len(urls) < max_items and stall_rounds < 30:
-            # Collect anchors and filter product links
+            # Collect anchors and filter product links (include data-* fallbacks)
             anchors = page.eval_on_selector_all(
-                "a[href]",
-                "els => els.map(e => (e.href || e.getAttribute('href')))"
+                "a[href], [data-href], [data-link]",
+                "els => els.map(e => (e.href || e.getAttribute('href') || e.getAttribute('data-href') || e.getAttribute('data-link')))"
             )
             for href in anchors:
                 if not href:
@@ -61,9 +77,28 @@ def collect_listing_urls(
                 elif href.startswith("https://divar.ir/v/"):
                     urls.add(href)
 
+            # Fallback: scan window state / page HTML for absolute post URLs
+            try:
+                raw_state = page.evaluate(
+                    "() => JSON.stringify(window.__APOLLO_STATE__ || window.__layoutProps || window.__INITIAL_STATE__ || null)"
+                )
+            except Exception:
+                raw_state = None
+            if raw_state:
+                for m in re.findall(r"https://divar\.ir/v/[\w%\-_/]+", raw_state):
+                    urls.add(m)
+            # Also scan HTML text for links
+            try:
+                html = page.content()
+                for m in re.findall(r"https://divar\.ir/v/[\w%\-_/]+", html):
+                    urls.add(m)
+            except Exception:
+                pass
+
             # Scroll down to load more
             try:
                 page.mouse.wheel(0, 3000)
+                page.keyboard.press("End")
             except Exception:
                 pass
             time.sleep(2.0)

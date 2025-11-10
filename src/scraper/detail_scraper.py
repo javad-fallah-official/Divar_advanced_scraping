@@ -82,7 +82,13 @@ def scrape_post_details(url: str, headless: bool = True, non_negotiable: bool = 
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=headless)
-        context = browser.new_context(user_agent=ua, viewport={"width": 1280, "height": 900})
+        context = browser.new_context(
+            user_agent=ua,
+            viewport={"width": 390, "height": 844},
+            device_scale_factor=2,
+            is_mobile=True,
+            has_touch=True,
+        )
         page = context.new_page()
         page.goto(url, wait_until="domcontentloaded")
 
