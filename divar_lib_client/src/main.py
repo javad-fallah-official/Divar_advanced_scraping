@@ -1,8 +1,12 @@
 import argparse
 from tqdm import tqdm
-
-from .scrape_divar_lib import collect_tokens, scrape_post_details
-from .db import Database
+try:
+    from .scrape_divar_lib import collect_tokens, scrape_post_details
+    from .db import Database
+except ImportError:
+    # Allow running as a script: python divar_lib_client/src/main.py
+    from scrape_divar_lib import collect_tokens, scrape_post_details
+    from db import Database
 
 
 def parse_args():
@@ -55,4 +59,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

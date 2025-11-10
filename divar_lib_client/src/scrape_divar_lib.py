@@ -1,20 +1,33 @@
 from typing import List, Dict, Any, Optional
 from tqdm import tqdm
 from datetime import datetime
+import sqlite3
+from pathlib import Path
 
 try:
     from divar import sync_client
-except Exception as e:  # pragma: no cover
+except Exception:  # pragma: no cover
     sync_client = None
 
-from .utils import (
-    clean_text,
-    parse_price_toman,
-    parse_mileage_km,
-    parse_model_year_jalali,
-    parse_location_line,
-    contains_brand,
-)
+try:
+    from .utils import (
+        clean_text,
+        parse_price_toman,
+        parse_mileage_km,
+        parse_model_year_jalali,
+        parse_location_line,
+        contains_brand,
+    )
+except ImportError:
+    # Allow running as a script: python divar_lib_client/src/main.py
+    from utils import (
+        clean_text,
+        parse_price_toman,
+        parse_mileage_km,
+        parse_model_year_jalali,
+        parse_location_line,
+        contains_brand,
+    )
 
 
 def _find_any_key(data: Any, keys: List[str]) -> Optional[Any]:
@@ -59,7 +72,35 @@ def collect_tokens(city: str, category: str, brand: Optional[str], non_negotiabl
     if sync_client is None:
         raise RuntimeError("divar library not installed. Please install requirements.")
     client = sync_client()
-    posts = client.GetCategory(city.title(), category)  # library expects CityName and Category-Name
+
+    # Robust category fallback: handle plural/singular differences and common aliases
+    cat_lower = (category or "").lower()
+    candidates: List[str] = [category]
+    if cat_lower.endswith("s"):
+        candidates.append(cat_lower[:-1])
+    # Known alias for motorcycles on Divar
+    if cat_lower == "motorcycles":
+        candidates.append("motorcycle")
+
+    posts = None
+    for cat in candidates:
+        try:
+            posts = client.GetCategory(city.title(), cat)
+            if isinstance(posts, list) and posts:
+                break
+        except KeyError:
+            # Library expected 'web_widgets' but response changed; try next candidate
+            continue
+        except Exception:
+            continue
+    if posts is None:
+        # Fallback: collect tokens from Playwright DB if available
+        tokens_db = _collect_tokens_from_playwright_db(city=city, brand=brand, non_negotiable=non_negotiable, max_items=max_items)
+        if tokens_db:
+            return tokens_db
+        raise RuntimeError(
+            f"Failed to fetch category '{category}'. Try '--category motorcycle' or update the library."
+        )
 
     tokens: List[str] = []
     for post in posts:
@@ -79,6 +120,48 @@ def collect_tokens(city: str, category: str, brand: Optional[str], non_negotiabl
         if len(tokens) >= max_items:
             break
     return tokens
+
+
+def _collect_tokens_from_playwright_db(city: str, brand: Optional[str], non_negotiable: bool, max_items: int) -> List[str]:
+    """Fallback: read tokens from Playwright scraper DB (data/divar.db)."""
+    db_path = Path("data") / "divar.db"
+    if not db_path.exists():
+        return []
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        clauses = []
+        params: List[Any] = []
+        if city:
+            clauses.append("city LIKE ?")
+            params.append(f"%{city}%")
+        if brand:
+            clauses.append("brand LIKE ?")
+            params.append(f"%{brand}%")
+        if non_negotiable:
+            clauses.append("negotiable = 0")
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        sql = f"SELECT url FROM posts{where} ORDER BY scraped_at DESC LIMIT ?"
+        params2 = params + [max_items]
+        rows = conn.execute(sql, params2).fetchall()
+        conn.close()
+        tokens: List[str] = []
+        seen = set()
+        for r in rows:
+            url = r["url"]
+            if not isinstance(url, str):
+                continue
+            # Extract token from URL like https://divar.ir/v/<token>
+            try:
+                token = url.rstrip("/").split("/")[-1]
+            except Exception:
+                token = None
+            if token and token not in seen:
+                seen.add(token)
+                tokens.append(token)
+        return tokens
+    except Exception:
+        return []
 
 
 def scrape_post_details(token: str, non_negotiable: bool) -> Optional[Dict[str, Any]]:
@@ -156,4 +239,3 @@ def scrape_post_details(token: str, non_negotiable: bool) -> Optional[Dict[str, 
         "scraped_at": datetime.utcnow().isoformat(),
     }
     return result
-
