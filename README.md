@@ -53,6 +53,17 @@ Output DB file: `data/divar.db`
 - Use Divar's internal JSON endpoints if stable and accessible
 - Expand schema (images, seller, token, etc.)
 
+## Comparison Project (Divar library)
+A separate project using the unofficial `divar` PyPI library is available under `divar_lib_client/`. It uses the library’s sync client to fetch category posts and post details, then maps them to the same SQLite schema for side-by-side comparison.
+
+Setup:
+- `python -m venv .venv && .\\.venv\\Scripts\\Activate.ps1`
+- `pip install -r divar_lib_client\\requirements.txt`
+- Run: `python divar_lib_client\\src\\main.py --city tehran --category motorcycles --brand honda --non-negotiable true --max-items 200`
+
+Notes:
+- The `divar` library is third-party and unofficial; APIs may change and some features require authentication.
+- Output DB: `data/divar_lib.db`. Compare with `data/divar.db` from the Playwright scraper.
+
 ## Optional Libraries
 There is an unofficial Divar client library on PyPI that may use internal endpoints and provide structured access. Evaluate feasibility and compliance before using in production.
-
