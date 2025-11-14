@@ -1,0 +1,26 @@
+{"ts": "2025-11-14T12:17:31.929104", "event": "run_start", "args": {"city": "tehran", "category": "motorcycles", "brand": "honda", "non_negotiable": "true", "max_items": 5, "headless": "true"}}
+{"ts": "2025-11-14T12:17:31.930207", "event": "listing_start", "city": "tehran", "category": "motorcycles", "brand": "honda", "non_negotiable": true, "max_items": 5}
+{"ts": "2025-11-14T12:17:36.308749", "event": "listing_http", "url_count": 5, "ms": 4377.539999986766}
+{"ts": "2025-11-14T12:17:36.309866", "event": "listing_count", "count": 5}
+{"ts": "2025-11-14T12:17:36.387347", "event": "scrape_start", "total": 5}
+{"ts": "2025-11-14T12:17:39.239972", "event": "detail_http_ok", "url": "https://divar.ir/v/هوندا-۱۲۵/QaXQRCeF", "status": 200, "ms": 2823.8461000146344, "bytes": 172238}
+{"ts": "2025-11-14T12:17:39.247689", "event": "detail_http_parsed", "url": "https://divar.ir/v/هوندا-۱۲۵/QaXQRCeF", "ok": true}
+{"ts": "2025-11-14T12:17:39.250353", "event": "detail_http_used", "url": "https://divar.ir/v/هوندا-۱۲۵/QaXQRCeF"}
+{"ts": "2025-11-14T12:17:39.254251", "event": "db_upsert", "url": "https://divar.ir/v/هوندا-۱۲۵/QaXQRCeF", "ms": 1.3869999966118485}
+{"ts": "2025-11-14T12:17:42.979913", "event": "detail_http_ok", "url": "https://divar.ir/v/واریو-160/QaW4twXO", "status": 200, "ms": 3723.481199995149, "bytes": 167659}
+{"ts": "2025-11-14T12:17:42.985793", "event": "detail_http_parsed", "url": "https://divar.ir/v/واریو-160/QaW4twXO", "ok": true}
+{"ts": "2025-11-14T12:17:42.988097", "event": "detail_http_used", "url": "https://divar.ir/v/واریو-160/QaW4twXO"}
+{"ts": "2025-11-14T12:17:42.990629", "event": "db_upsert", "url": "https://divar.ir/v/واریو-160/QaW4twXO", "ms": 1.2987999944016337}
+{"ts": "2025-11-14T12:17:45.886872", "event": "detail_http_ok", "url": "https://divar.ir/v/%D9%87%D9%88%D9%86%D8%AF%D8%A7-%DB%B1%DB%B2%DB%B5/QaXQRCeF", "status": 200, "ms": 2894.6332999912556, "bytes": 172240}
+{"ts": "2025-11-14T12:17:45.892829", "event": "detail_http_parsed", "url": "https://divar.ir/v/%D9%87%D9%88%D9%86%D8%AF%D8%A7-%DB%B1%DB%B2%DB%B5/QaXQRCeF", "ok": true}
+{"ts": "2025-11-14T12:17:45.895279", "event": "detail_http_used", "url": "https://divar.ir/v/%D9%87%D9%88%D9%86%D8%AF%D8%A7-%DB%B1%DB%B2%DB%B5/QaXQRCeF"}
+{"ts": "2025-11-14T12:17:45.902304", "event": "db_upsert", "url": "https://divar.ir/v/%D9%87%D9%88%D9%86%D8%AF%D8%A7-%DB%B1%DB%B2%DB%B5/QaXQRCeF", "ms": 5.71900000795722}
+{"ts": "2025-11-14T12:17:48.926779", "event": "detail_http_ok", "url": "https://divar.ir/v/%D9%87%D9%88%D9%86%D8%AF%D8%A7-%DA%A9%D9%84%DB%8C%DA%A9-%DB%B1%DB%B6%DB%B0-%D8%A8%D8%B3%DB%8C%D8%A7%D8%B1-%D8%AA%D9%85%DB%8C%D8%B2/QaTcIi3Q", "status": 200, "ms": 3022.614000015892, "bytes": 166884}
+{"ts": "2025-11-14T12:17:48.932869", "event": "detail_http_parsed", "url": "https://divar.ir/v/%D9%87%D9%88%D9%86%D8%AF%D8%A7-%DA%A9%D9%84%DB%8C%DA%A9-%DB%B1%DB%B6%DB%B0-%D8%A8%D8%B3%DB%8C%D8%A7%D8%B1-%D8%AA%D9%85%DB%8C%D8%B2/QaTcIi3Q", "ok": true}
+{"ts": "2025-11-14T12:17:48.935591", "event": "detail_http_used", "url": "https://divar.ir/v/%D9%87%D9%88%D9%86%D8%AF%D8%A7-%DA%A9%D9%84%DB%8C%DA%A9-%DB%B1%DB%B6%DB%B0-%D8%A8%D8%B3%DB%8C%D8%A7%D8%B1-%D8%AA%D9%85%DB%8C%D8%B2/QaTcIi3Q"}
+{"ts": "2025-11-14T12:17:48.943155", "event": "db_upsert", "url": "https://divar.ir/v/%D9%87%D9%88%D9%86%D8%AF%D8%A7-%DA%A9%D9%84%DB%8C%DA%A9-%DB%B1%DB%B6%DB%B0-%D8%A8%D8%B3%DB%8C%D8%A7%D8%B1-%D8%AA%D9%85%DB%8C%D8%B2/QaTcIi3Q", "ms": 6.058599974494427}
+{"ts": "2025-11-14T12:17:51.734560", "event": "detail_http_ok", "url": "https://divar.ir/v/%D9%85%D9%88%D8%AA%D9%88%D8%B1-%D9%85%D8%B2%D8%A7%DB%8C%D8%AF%D9%87-%D9%85%D8%AF%D9%84-%DB%B9%DB%B5/QaXAh4Ai", "status": 200, "ms": 2789.6283000009134, "bytes": 18294}
+{"ts": "2025-11-14T12:17:51.736366", "event": "detail_http_parsed", "url": "https://divar.ir/v/%D9%85%D9%88%D8%AA%D9%88%D8%B1-%D9%85%D8%B2%D8%A7%DB%8C%D8%AF%D9%87-%D9%85%D8%AF%D9%84-%DB%B9%DB%B5/QaXAh4Ai", "ok": true}
+{"ts": "2025-11-14T12:17:51.738926", "event": "detail_http_used", "url": "https://divar.ir/v/%D9%85%D9%88%D8%AA%D9%88%D8%B1-%D9%85%D8%B2%D8%A7%DB%8C%D8%AF%D9%87-%D9%85%D8%AF%D9%84-%DB%B9%DB%B5/QaXAh4Ai"}
+{"ts": "2025-11-14T12:17:51.741692", "event": "db_upsert", "url": "https://divar.ir/v/%D9%85%D9%88%D8%AA%D9%88%D8%B1-%D9%85%D8%B2%D8%A7%DB%8C%D8%AF%D9%87-%D9%85%D8%AF%D9%84-%DB%B9%DB%B5/QaXAh4Ai", "ms": 1.3323999883141369}
+{"ts": "2025-11-14T12:17:51.743352", "event": "run_done", "inserted": 5, "updated": 0, "skipped": 0}

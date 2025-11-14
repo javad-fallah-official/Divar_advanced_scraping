@@ -7,6 +7,7 @@ from playwright.sync_api import sync_playwright
 from .utils import random_user_agent
 from .api_listing import collect_listing_urls_via_api, collect_listing_urls_via_http, _extract_urls_from_json
 import re
+from .metrics import log_event, Timer
 
 
 def _build_listing_url(city: str, category: str, brand: str | None, non_negotiable: bool) -> str:
@@ -30,21 +31,26 @@ def collect_listing_urls(
     start_url = _build_listing_url(city, category, brand, non_negotiable)
     ua = random_user_agent()
     urls: set[str] = set()
+    log_event("listing_start", city=city, category=category, brand=brand, non_negotiable=non_negotiable, max_items=max_items)
 
     # Try HTTP SSR-first; if it yields results, return early
     try:
+        t_http = Timer()
         http_urls = collect_listing_urls_via_http(city, category, brand, non_negotiable, max_items)
         if http_urls:
+            log_event("listing_http", url_count=len(http_urls), ms=t_http.ms())
             return http_urls[:max_items]
-    except Exception:
-        pass
+    except Exception as e:
+        log_event("listing_http_error", error=str(e))
     # Then try API; if it yields results, return
     try:
+        t_api = Timer()
         api_urls = collect_listing_urls_via_api(city, category, brand, non_negotiable, max_items)
         if api_urls:
+            log_event("listing_api", url_count=len(api_urls), ms=t_api.ms())
             return api_urls[:max_items]
-    except Exception:
-        pass
+    except Exception as e:
+        log_event("listing_api_error", error=str(e))
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=headless)
@@ -56,7 +62,9 @@ def collect_listing_urls(
             has_touch=True,
         )
         page = context.new_page()
+        t_goto = Timer()
         page.goto(start_url, wait_until="domcontentloaded")
+        log_event("playwright_goto", url=start_url, ms=t_goto.ms())
         # Give dynamic content some time to settle
         try:
             page.wait_for_load_state("networkidle", timeout=5000)
@@ -135,9 +143,11 @@ def collect_listing_urls(
 
             if len(urls) == last_count:
                 stall_rounds += 1
+                log_event("listing_stall", round=stall_rounds, count=len(urls))
             else:
                 stall_rounds = 0
                 last_count = len(urls)
+                log_event("listing_progress", count=len(urls))
 
         browser.close()
 
@@ -145,4 +155,5 @@ def collect_listing_urls(
     out = list(urls)
     if len(out) > max_items:
         out = out[:max_items]
+    log_event("listing_done", url_count=len(out))
     return out

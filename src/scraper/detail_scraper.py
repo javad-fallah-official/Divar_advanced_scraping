@@ -13,6 +13,7 @@ from .utils import (
     now_iso,
     random_user_agent,
 )
+from .metrics import log_event, Timer
 
 
 KNOWN_LABELS = [
@@ -78,9 +79,9 @@ def _value_after(label: str, body_text: str) -> Optional[str]:
 
 
 def scrape_post_details(url: str, headless: bool = True, non_negotiable: bool = True) -> Optional[Dict[str, Any]]:
-    # First, try HTTP-based scraping to avoid dynamic gating
     http_first = scrape_post_details_http(url, non_negotiable)
     if http_first:
+        log_event("detail_http_used", url=url)
         return http_first
 
     ua = random_user_agent()
@@ -95,9 +96,12 @@ def scrape_post_details(url: str, headless: bool = True, non_negotiable: bool = 
             has_touch=True,
         )
         page = context.new_page()
+        t_nav = Timer()
         page.goto(url, wait_until="domcontentloaded")
+        log_event("detail_playwright_goto", url=url, ms=t_nav.ms())
 
         # First, try JSON sources
+        t_parse = Timer()
         data = _extract_from_window(page) or _extract_from_ld_json(page)
 
         body_text = page.inner_text("body")
@@ -154,6 +158,7 @@ def scrape_post_details(url: str, headless: bool = True, non_negotiable: bool = 
         if m_posted:
             posted_line = clean_text(m_posted.group(1))
 
+        log_event("detail_parse_done", url=url, ms=t_parse.ms())
         browser.close()
 
     if not title:
@@ -201,11 +206,16 @@ def scrape_post_details_http(url: str, non_negotiable: bool = True) -> Optional[
     }
 
     try:
+        t_req = Timer()
         resp = requests.get(url, headers=headers, timeout=15)
+        dur_ms = t_req.ms()
         if resp.status_code != 200:
+            log_event("detail_http_status", url=url, status=resp.status_code, ms=dur_ms)
             return None
         html = resp.text
-    except Exception:
+        log_event("detail_http_ok", url=url, status=resp.status_code, ms=dur_ms, bytes=len(html.encode("utf-8", errors="ignore")))
+    except Exception as e:
+        log_event("detail_http_error", url=url, error=str(e))
         return None
 
     title = None
@@ -256,7 +266,7 @@ def scrape_post_details_http(url: str, non_negotiable: bool = True) -> Optional[
     if not title:
         return None
 
-    return {
+    out = {
         "url": url,
         "title": title,
         "city": city,
@@ -271,3 +281,5 @@ def scrape_post_details_http(url: str, non_negotiable: bool = True) -> Optional[
         "posted_at": None,
         "scraped_at": now_iso(),
     }
+    log_event("detail_http_parsed", url=url, ok=bool(out.get("title")))
+    return out

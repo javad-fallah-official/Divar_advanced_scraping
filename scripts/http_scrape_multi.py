@@ -1,6 +1,6 @@
-import os
 import time
-import sqlite3
+import os
+import psycopg2
 
 from scraper.listing_scraper import collect_listing_urls
 from scraper.detail_scraper import scrape_post_details_http
@@ -33,8 +33,7 @@ def main():
     if len(urls) > 200:
         urls = urls[:200]
 
-    os.makedirs("data", exist_ok=True)
-    db = Database(db_path="data/divar.db")
+    db = Database()
 
     inserted = 0
     for i, url in enumerate(urls, 1):
@@ -47,8 +46,15 @@ def main():
         time.sleep(0.15)
 
     print("Inserted:", inserted)
-    con = sqlite3.connect("data/divar.db")
-    c = con.execute("select count(*) from posts").fetchone()[0]
+    host = os.environ.get("DB_HOST", "localhost")
+    port = int(os.environ.get("DB_PORT", "5432"))
+    user = os.environ.get("DB_USER", "postgres")
+    password = os.environ.get("DB_PASSWORD", "admin")
+    name = os.environ.get("DB_NAME", "Divar")
+    con = psycopg2.connect(host=host, port=port, user=user, password=password, dbname=name)
+    with con.cursor() as cur:
+        cur.execute("select count(*) from posts")
+        c = cur.fetchone()[0]
     print("DB count now:", c)
     con.close()
 

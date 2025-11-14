@@ -1,6 +1,6 @@
 import os
-import sqlite3
 import time
+import psycopg2
 
 from scraper.listing_scraper import collect_listing_urls
 from scraper.detail_scraper import scrape_post_details_http
@@ -14,8 +14,7 @@ def main():
     print("Sample:", urls[:10])
 
     # Ensure DB exists
-    os.makedirs("data", exist_ok=True)
-    db = Database(db_path="data/divar.db")
+    db = Database()
 
     inserted = 0
     # Try to insert up to 100 posts via HTTP-only details
@@ -28,8 +27,15 @@ def main():
             time.sleep(0.2)
     print("Inserted via HTTP:", inserted)
 
-    con = sqlite3.connect("data/divar.db")
-    c = con.execute("select count(*) from posts").fetchone()[0]
+    host = os.environ.get("DB_HOST", "localhost")
+    port = int(os.environ.get("DB_PORT", "5432"))
+    user = os.environ.get("DB_USER", "postgres")
+    password = os.environ.get("DB_PASSWORD", "admin")
+    name = os.environ.get("DB_NAME", "Divar")
+    con = psycopg2.connect(host=host, port=port, user=user, password=password, dbname=name)
+    with con.cursor() as cur:
+        cur.execute("select count(*) from posts")
+        c = cur.fetchone()[0]
     print("DB count now:", c)
     con.close()
 

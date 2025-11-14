@@ -2,9 +2,10 @@ import argparse
 from datetime import datetime
 from tqdm import tqdm
 
-from scraper.listing_scraper import collect_listing_urls
-from scraper.detail_scraper import scrape_post_details
-from scraper.db import Database
+from .scraper.listing_scraper import collect_listing_urls
+from .scraper.detail_scraper import scrape_post_details
+from .scraper.db import Database
+from .scraper.metrics import log_event, sample_system
 
 
 def parse_args():
@@ -30,6 +31,7 @@ def main():
     brand_arg = (args.brand or "").strip().lower()
     brand = None if brand_arg in {"", "none", "all"} else args.brand
 
+    log_event("run_start", args=vars(args))
     print("Collecting listing URLs...")
     listing_urls = collect_listing_urls(
         city=args.city,
@@ -40,11 +42,13 @@ def main():
         headless=headless,
     )
     print(f"Collected {len(listing_urls)} unique listing URLs.")
+    log_event("listing_count", count=len(listing_urls))
 
     db = Database(db_path="data/divar.db")
     inserted, updated, skipped = 0, 0, 0
 
     print("Scraping detail pages and saving to DB...")
+    log_event("scrape_start", total=len(listing_urls))
     for url in tqdm(listing_urls):
         try:
             details = scrape_post_details(url=url, headless=headless, non_negotiable=non_negotiable)
@@ -61,10 +65,14 @@ def main():
         except Exception as e:
             skipped += 1
             print(f"Error scraping {url}: {e}")
+        if (inserted + updated + skipped) % 20 == 0:
+            m = sample_system()
+            log_event("system_sample", **m)
 
     print(
-        f"Done. Inserted: {inserted}, Updated: {updated}, Skipped: {skipped}. DB: data/divar.db"
+        f"Done. Inserted: {inserted}, Updated: {updated}, Skipped: {skipped}. DB: postgres"
     )
+    log_event("run_done", inserted=inserted, updated=updated, skipped=skipped)
 
 
 if __name__ == "__main__":

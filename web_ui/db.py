@@ -1,9 +1,15 @@
-import sqlite3
+import os
 from typing import Any, Dict, List, Optional
+import psycopg2
+import psycopg2.extras
 
 
-def _row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
-    return {key: row[key] for key in row.keys()}
+def _rows_to_dicts(cur, rows) -> List[Dict[str, Any]]:
+    cols = [d[0] for d in cur.description]
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        out.append({cols[i]: r[i] for i in range(len(cols))})
+    return out
 
 
 def _build_where_and_params(filters: Dict[str, Any]) -> tuple[str, List[Any]]:
@@ -62,13 +68,20 @@ def _build_where_and_params(filters: Dict[str, Any]) -> tuple[str, List[Any]]:
 
 
 def query_posts_single(db_path: str, filters: Dict[str, Any], limit: int = 1000) -> List[Dict[str, Any]]:
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
+    host = os.environ.get("DB_HOST", "localhost")
+    port = int(os.environ.get("DB_PORT", "5432"))
+    user = os.environ.get("DB_USER", "postgres")
+    password = os.environ.get("DB_PASSWORD", "admin")
+    name = os.environ.get("DB_NAME", "Divar")
+    conn = psycopg2.connect(host=host, port=port, user=user, password=password, dbname=name)
     where, params = _build_where_and_params(filters)
-    sql = f"SELECT * FROM posts{where} ORDER BY scraped_at DESC LIMIT ?"  # cap to avoid huge memory
+    sql = f"SELECT * FROM posts{where} ORDER BY scraped_at DESC LIMIT %s"
     params2 = params + [limit]
-    rows = conn.execute(sql, params2).fetchall()
+    with conn.cursor() as cur:
+        cur.execute(sql, params2)
+        rows = cur.fetchall()
+        out = _rows_to_dicts(cur, rows)
     conn.close()
-    return [_row_to_dict(r) for r in rows]
+    return out
 
 
