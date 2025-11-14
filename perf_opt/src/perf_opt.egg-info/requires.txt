@@ -1,0 +1,7 @@
+numpy>=1.23
+matplotlib>=3.7
+seaborn>=0.12
+
+[:python_version < "3.13"]
+numba>=0.58
+line_profiler>=4.1
