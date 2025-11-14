@@ -17,43 +17,43 @@ def _build_where_and_params(filters: Dict[str, Any]) -> tuple[str, List[Any]]:
     params: List[Any] = []
 
     if filters.get("city"):
-        clauses.append("city LIKE ?")
+        clauses.append("city LIKE %s")
         params.append(f"%{filters['city']}%")
 
     if filters.get("district"):
-        clauses.append("district LIKE ?")
+        clauses.append("district LIKE %s")
         params.append(f"%{filters['district']}%")
 
     if filters.get("brand"):
-        clauses.append("brand LIKE ?")
+        clauses.append("brand LIKE %s")
         params.append(f"%{filters['brand']}%")
 
     if filters.get("search"):
-        clauses.append("(title LIKE ? OR description LIKE ?)")
+        clauses.append("(title LIKE %s OR description LIKE %s)")
         params.extend([f"%{filters['search']}%", f"%{filters['search']}%"])
 
     # Price range
     if filters.get("min_price") is not None:
-        clauses.append("price_toman >= ?")
+        clauses.append("price_toman >= %s")
         params.append(filters["min_price"])
     if filters.get("max_price") is not None:
-        clauses.append("price_toman <= ?")
+        clauses.append("price_toman <= %s")
         params.append(filters["max_price"])
 
     # Year range
     if filters.get("min_year") is not None:
-        clauses.append("model_year_jalali >= ?")
+        clauses.append("model_year_jalali >= %s")
         params.append(filters["min_year"])
     if filters.get("max_year") is not None:
-        clauses.append("model_year_jalali <= ?")
+        clauses.append("model_year_jalali <= %s")
         params.append(filters["max_year"])
 
     # Mileage range
     if filters.get("min_mileage") is not None:
-        clauses.append("mileage_km >= ?")
+        clauses.append("mileage_km >= %s")
         params.append(filters["min_mileage"])
     if filters.get("max_mileage") is not None:
-        clauses.append("mileage_km <= ?")
+        clauses.append("mileage_km <= %s")
         params.append(filters["max_mileage"])
 
     # Negotiable filter (our DB saves 0 for non-negotiable; null otherwise)

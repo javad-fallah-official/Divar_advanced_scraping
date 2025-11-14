@@ -51,7 +51,25 @@ def extract_int(text: str) -> int | None:
 
 
 def parse_price_toman(text: str) -> int | None:
-    return extract_int(text)
+    if not text:
+        return None
+    text = normalize_persian_digits(text)
+    nums_with_unit = re.findall(r"(\d{1,3}(?:\d{3})+|\d+)\s*تومان", text)
+    candidates = []
+    for n in nums_with_unit:
+        try:
+            candidates.append(int(n))
+        except Exception:
+            pass
+    if not candidates:
+        for n in re.findall(r"(\d{1,3}(?:\d{3})+|\d+)", text):
+            try:
+                candidates.append(int(n))
+            except Exception:
+                pass
+    if not candidates:
+        return None
+    return max(candidates)
 
 
 def parse_mileage_km(text: str) -> int | None:
@@ -95,3 +113,40 @@ def random_user_agent() -> str:
 
 def now_iso() -> str:
     return datetime.utcnow().isoformat()
+
+
+def parse_color_name(text: str) -> str | None:
+    if not text:
+        return None
+    s = clean_text(text)
+    s = re.sub(r"\d+", " ", s)
+    s = re.sub(r"[\-–_,;|]", " ", s)
+    s = clean_text(s)
+    fa_to_en = {
+        "آبی": "blue",
+        "قرمز": "red",
+        "مشکی": "black",
+        "سفید": "white",
+        "نقره‌ای": "silver",
+        "نقره اي": "silver",
+        "خاکستری": "gray",
+        "طوسی": "gray",
+        "سبز": "green",
+        "زرد": "yellow",
+        "نارنجی": "orange",
+        "صورتی": "pink",
+        "بنفش": "purple",
+        "قهوه‌ای": "brown",
+        "طلایی": "gold",
+        "زرشکی": "maroon",
+        "سرمه‌ای": "navy",
+        "کرم": "beige",
+    }
+    for fa, en in fa_to_en.items():
+        if fa in s:
+            return en
+    # Fallback: return the last word token if it looks like a color word
+    parts = s.split(" ")
+    if parts:
+        return parts[-1]
+    return None

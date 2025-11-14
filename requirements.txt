@@ -4,3 +4,5 @@ tqdm>=4.66.0
 requests>=2.31.0
 psutil>=5.9.0
 psycopg2-binary>=2.9.9
+aiohttp>=3.10.5
+selectolax>=0.3.21

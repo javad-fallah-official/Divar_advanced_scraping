@@ -4,6 +4,7 @@ from typing import List, Optional
 import re
 
 from .utils import random_user_agent
+from .http_client import get_thread_session
 
 
 def _extract_urls_from_json(data: object) -> List[str]:
@@ -34,10 +35,8 @@ def collect_listing_urls_via_api(
     non_negotiable: bool,
     max_items: int = 200,
 ) -> List[str]:
-    # Import requests lazily to avoid hard dependency
-    try:
-        import requests  # type: ignore
-    except Exception:
+    sess = get_thread_session()
+    if sess is None:
         return []
     # Try a set of known endpoints observed in Divar clients
     endpoints = [
@@ -72,7 +71,7 @@ def collect_listing_urls_via_api(
     errors = []
     for ep in endpoints:
         try:
-            resp = requests.post(ep, json=payload, headers=headers, timeout=15)
+            resp = sess.post(ep, json=payload, headers=headers, timeout=15)
             if resp.status_code != 200:
                 errors.append(f"{ep} -> {resp.status_code}")
                 continue
@@ -94,10 +93,8 @@ def collect_listing_urls_via_http(
     non_negotiable: bool,
     max_items: int = 200,
 ) -> List[str]:
-    # Import requests lazily
-    try:
-        import requests  # type: ignore
-    except Exception:
+    sess = get_thread_session()
+    if sess is None:
         return []
 
     ua = random_user_agent()
@@ -113,7 +110,7 @@ def collect_listing_urls_via_http(
         base = f"{base}{sep}non-negotiable=true"
 
     try:
-        resp = requests.get(base, headers=headers, timeout=15)
+        resp = sess.get(base, headers=headers, timeout=15)
         if resp.status_code != 200:
             return []
         html = resp.text

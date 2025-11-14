@@ -12,8 +12,10 @@ from .utils import (
     parse_location_line,
     now_iso,
     random_user_agent,
+    parse_color_name,
 )
 from .metrics import log_event, Timer
+from .http_client import get_thread_session
 
 
 KNOWN_LABELS = [
@@ -28,6 +30,9 @@ KNOWN_LABELS = [
     "زنگ خطرهای قبل از معامله",
 ]
 
+_RE_MONTH = r"(فروردین|اردیبهشت|خرداد|تیر|مرداد|شهریور|مهر|آبان|آذر|دی|بهمن|اسفند)"
+_RE_TITLE_CITY_DATE = re.compile(rf"^(.*?)\s+در\s+([^\s\-،]+)(?:\s*[-–]\s*(\d{{1,2}}\s+{_RE_MONTH}\s+(?:13\d{{2}}|14\d{{2}})))?", re.U)
+_RE_BASE_TITLE_SPLIT = re.compile(r"^(.*?)\s+در\s+", re.U)
 
 def _extract_from_ld_json(page) -> dict | None:
     try:
@@ -58,6 +63,36 @@ def _extract_from_window(page) -> dict | None:
     return None
 
 
+def _extract_fields_from_json(data: object) -> dict:
+    out: dict = {}
+    def walk(obj):
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                lk = str(k).lower()
+                if isinstance(v, (dict, list)):
+                    walk(v)
+                else:
+                    if isinstance(v, (int, float)):
+                        vi = int(v)
+                        if ("price" in lk or "toman" in lk) and vi >= 10000:
+                            out.setdefault("price_toman", vi)
+                        if ("year" in lk or "model_year" in lk) and 1200 <= vi <= 1600:
+                            out.setdefault("model_year_jalali", vi)
+                        if ("mileage" in lk or "kilometer" in lk or lk.endswith("km")) and vi >= 0:
+                            out.setdefault("mileage_km", vi)
+                    elif isinstance(v, str):
+                        if "brand" in lk and v.strip():
+                            out.setdefault("brand", clean_text(v))
+        elif isinstance(obj, list):
+            for it in obj:
+                walk(it)
+    try:
+        walk(data)
+    except Exception:
+        pass
+    return out
+
+
 def _value_after(label: str, body_text: str) -> Optional[str]:
     # Capture text following a label until the next known label or newline
     body_text = clean_text(body_text)
@@ -78,8 +113,8 @@ def _value_after(label: str, body_text: str) -> Optional[str]:
     return value or None
 
 
-def scrape_post_details(url: str, headless: bool = True, non_negotiable: bool = True) -> Optional[Dict[str, Any]]:
-    http_first = scrape_post_details_http(url, non_negotiable)
+def scrape_post_details(url: str, headless: bool = True, non_negotiable: bool = True, http_timeout: float = 10.0) -> Optional[Dict[str, Any]]:
+    http_first = scrape_post_details_http(url, non_negotiable, http_timeout=http_timeout)
     if http_first:
         log_event("detail_http_used", url=url)
         return http_first
@@ -96,9 +131,37 @@ def scrape_post_details(url: str, headless: bool = True, non_negotiable: bool = 
             has_touch=True,
         )
         page = context.new_page()
+        api_payloads: list[object] = []
+        def _on_response(resp):
+            try:
+                u = resp.url
+            except Exception:
+                return
+            if "api.divar.ir" in u:
+                try:
+                    data = resp.json()
+                except Exception:
+                    try:
+                        data = json.loads(resp.text())
+                    except Exception:
+                        data = None
+                if isinstance(data, (dict, list)):
+                    api_payloads.append(data)
+        try:
+            page.on("response", _on_response)
+        except Exception:
+            pass
         t_nav = Timer()
         page.goto(url, wait_until="domcontentloaded")
         log_event("detail_playwright_goto", url=url, ms=t_nav.ms())
+        try:
+            page.wait_for_selector("h1", timeout=4000)
+        except Exception:
+            pass
+        try:
+            page.wait_for_selector("script#__NEXT_DATA__", timeout=3000)
+        except Exception:
+            pass
 
         # First, try JSON sources
         t_parse = Timer()
@@ -127,11 +190,27 @@ def scrape_post_details(url: str, headless: bool = True, non_negotiable: bool = 
                     title = clean_text(val)
                     break
         if not title:
-            # Fallback by heuristics: first significant line of page body
             title = clean_text(body_text.split("\n")[0]) if body_text else None
+        if title:
+            mtd = _RE_TITLE_CITY_DATE.match(title)
+            if mtd:
+                base = clean_text(mtd.group(1) or "")
+                city_from_title = clean_text(mtd.group(2) or "")
+                date_from_title = clean_text(mtd.group(3) or "") if mtd.lastindex and mtd.group(3) else None
+                if base:
+                    title = base
+                if city_from_title:
+                    city = city or city_from_title
+                if date_from_title:
+                    posted_line = date_from_title
+        if title and title.strip() == "سایت دیوار":
+            title = None
 
-        # Location line (e.g., "دقایقی پیش در تهران، امامت")
         city, district = parse_location_line(body_text)
+        if not city:
+            mcity = re.search(r"در\s+([^\s\-،]+)", body_text)
+            if mcity:
+                city = clean_text(mcity.group(1))
 
         # Attributes via text heuristics
         price_text = _value_after("قیمت", body_text)
@@ -144,7 +223,7 @@ def scrape_post_details(url: str, headless: bool = True, non_negotiable: bool = 
         model_year_jalali = parse_model_year_jalali(year_text or "") if year_text else None
 
         color_text = _value_after("رنگ", body_text)
-        color = clean_text(color_text) if color_text else None
+        color = parse_color_name(color_text) if color_text else None
 
         brand_text = _value_after("برند", body_text)
         brand = clean_text(brand_text) if brand_text else None
@@ -152,12 +231,40 @@ def scrape_post_details(url: str, headless: bool = True, non_negotiable: bool = 
         desc_text = _value_after("توضیحات", body_text)
         description = clean_text(desc_text) if desc_text else None
 
-        # Posted at line (raw, not parsed)
-        posted_line = None
-        m_posted = re.search(r"(دقایقی پیش .*|ساعت پیش .*|روز پیش .*|در\s+[^\n]+)", body_text)
-        if m_posted:
-            posted_line = clean_text(m_posted.group(1))
+        posted_line = posted_line if 'posted_line' in locals() and posted_line else None
+        if not posted_line:
+            m_posted = re.search(rf"(\d{{1,2}}\s+{_RE_MONTH}\s+(?:13\d{{2}}|14\d{{2}}))", body_text)
+            if m_posted:
+                posted_line = clean_text(m_posted.group(1))
 
+        try:
+            next_raw = page.locator("script#__NEXT_DATA__").first.inner_text()
+            if next_raw:
+                jf = _extract_fields_from_json(json.loads(next_raw))
+                if price_toman is None:
+                    price_toman = jf.get("price_toman")
+                if model_year_jalali is None:
+                    model_year_jalali = jf.get("model_year_jalali")
+                if mileage_km is None:
+                    mileage_km = jf.get("mileage_km")
+                if not brand:
+                    brand = jf.get("brand")
+        except Exception:
+            pass
+        # Merge API payload fields
+        try:
+            for pl in api_payloads:
+                jf = _extract_fields_from_json(pl)
+                if price_toman is None:
+                    price_toman = jf.get("price_toman")
+                if model_year_jalali is None:
+                    model_year_jalali = jf.get("model_year_jalali")
+                if mileage_km is None:
+                    mileage_km = jf.get("mileage_km")
+                if not brand:
+                    brand = jf.get("brand")
+        except Exception:
+            pass
         log_event("detail_parse_done", url=url, ms=t_parse.ms())
         browser.close()
 
@@ -192,10 +299,9 @@ def _inner_text_from_html(html: str) -> str:
     return text.strip()
 
 
-def scrape_post_details_http(url: str, non_negotiable: bool = True) -> Optional[Dict[str, Any]]:
-    try:
-        import requests  # type: ignore
-    except Exception:
+def scrape_post_details_http(url: str, non_negotiable: bool = True, http_timeout: float = 10.0) -> Optional[Dict[str, Any]]:
+    sess = get_thread_session(timeout=http_timeout)
+    if sess is None:
         return None
 
     ua = random_user_agent()
@@ -207,7 +313,7 @@ def scrape_post_details_http(url: str, non_negotiable: bool = True) -> Optional[
 
     try:
         t_req = Timer()
-        resp = requests.get(url, headers=headers, timeout=15)
+        resp = sess.get(url, headers=headers, timeout=http_timeout)
         dur_ms = t_req.ms()
         if resp.status_code != 200:
             log_event("detail_http_status", url=url, status=resp.status_code, ms=dur_ms)
@@ -219,13 +325,36 @@ def scrape_post_details_http(url: str, non_negotiable: bool = True) -> Optional[
         return None
 
     title = None
+    city, district, posted_line = None, None, None
     # og:title
-    m_og = re.search(r"<meta[^>]+property=\"og:title\"[^>]+content=\"(.*?)\"", html, re.I)
+    m_og = _RE_OG_TITLE.search(html)
     if m_og:
         title = clean_text(m_og.group(1))
+        mtd = _RE_TITLE_CITY_DATE.match(title)
+        if mtd:
+            base = clean_text(mtd.group(1) or "")
+            city_from_title = clean_text(mtd.group(2) or "")
+            date_from_title = clean_text(mtd.group(3) or "") if mtd.lastindex and mtd.group(3) else None
+            if base:
+                title = base
+            if city_from_title:
+                city = city or city_from_title
+            if date_from_title:
+                posted_line = date_from_title
+        mtd = _RE_TITLE_CITY_DATE.match(title)
+        if mtd:
+            base = clean_text(mtd.group(1) or "")
+            city_from_title = clean_text(mtd.group(2) or "")
+            date_from_title = clean_text(mtd.group(3) or "") if mtd.lastindex and mtd.group(3) else None
+            if base:
+                title = base
+            if city_from_title:
+                city = city or city_from_title
+            if date_from_title:
+                posted_line = date_from_title
     # ld+json
     if not title:
-        m_ld = re.search(r"<script[^>]+type=\"application/ld\+json\"[^>]*>([\s\S]*?)</script>", html, re.I)
+        m_ld = _RE_LD_JSON.search(html)
         if m_ld:
             try:
                 data = json.loads(m_ld.group(1))
@@ -248,8 +377,42 @@ def scrape_post_details_http(url: str, non_negotiable: bool = True) -> Optional[
     body_text = _inner_text_from_html(html)
     if not title and body_text:
         title = clean_text(body_text.split(" ")[0])
+    if title:
+        mtd2 = _RE_TITLE_CITY_DATE.match(title)
+        if mtd2:
+            base = clean_text(mtd2.group(1) or "")
+            city_from_title = clean_text(mtd2.group(2) or "")
+            date_from_title = clean_text(mtd2.group(3) or "") if mtd2.lastindex and mtd2.group(3) else None
+            if base:
+                title = base
+            if city_from_title:
+                city = city or city_from_title
+            if date_from_title:
+                posted_line = posted_line or date_from_title
+    if title:
+        mtd2 = _RE_TITLE_CITY_DATE.match(title)
+        if mtd2:
+            base = clean_text(mtd2.group(1) or "")
+            city_from_title = clean_text(mtd2.group(2) or "")
+            date_from_title = clean_text(mtd2.group(3) or "") if mtd2.lastindex and mtd2.group(3) else None
+            if base:
+                title = base
+            if city_from_title:
+                city = city or city_from_title
+            if date_from_title:
+                posted_line = posted_line or date_from_title
+    if title and title.strip() == "سایت دیوار":
+        title = None
 
     city, district = parse_location_line(body_text)
+    if not city:
+        mcity = re.search(r"در\s+([^\s\-،]+)", body_text)
+        if mcity:
+            city = clean_text(mcity.group(1))
+    if not city:
+        mcity = re.search(r"در\s+([^\s\-،]+)", body_text)
+        if mcity:
+            city = clean_text(mcity.group(1))
     price_text = _value_after("قیمت", body_text)
     price_toman = parse_price_toman(price_text or "") if price_text else None
     mileage_text = _value_after("کارکرد", body_text)
@@ -257,11 +420,34 @@ def scrape_post_details_http(url: str, non_negotiable: bool = True) -> Optional[
     year_text = _value_after("مدل (سال تولید)", body_text) or _value_after("مدل", body_text)
     model_year_jalali = parse_model_year_jalali(year_text or "") if year_text else None
     color_text = _value_after("رنگ", body_text)
-    color = clean_text(color_text) if color_text else None
+    color = parse_color_name(color_text) if color_text else None
     brand_text = _value_after("برند", body_text)
     brand = clean_text(brand_text) if brand_text else None
     desc_text = _value_after("توضیحات", body_text)
     description = clean_text(desc_text) if desc_text else None
+    if not posted_line:
+        m_posted2 = re.search(rf"(\d{{1,2}}\s+{_RE_MONTH}\s+(?:13\d{{2}}|14\d{{2}}))", body_text)
+        if m_posted2:
+            posted_line = clean_text(m_posted2.group(1))
+    if not posted_line:
+        m_posted2 = re.search(rf"(\d{{1,2}}\s+{_RE_MONTH}\s+(?:13\d{{2}}|14\d{{2}}))", body_text)
+        if m_posted2:
+            posted_line = clean_text(m_posted2.group(1))
+
+    try:
+        m_next = re.search(r"<script id=\"__NEXT_DATA__\" type=\"application/json\">(.*?)</script>", html, re.S)
+        if m_next:
+            jf = _extract_fields_from_json(json.loads(m_next.group(1)))
+            if price_toman is None:
+                price_toman = jf.get("price_toman")
+            if model_year_jalali is None:
+                model_year_jalali = jf.get("model_year_jalali")
+            if mileage_km is None:
+                mileage_km = jf.get("mileage_km")
+            if not brand:
+                brand = jf.get("brand")
+    except Exception:
+        pass
 
     if not title:
         return None
@@ -278,8 +464,12 @@ def scrape_post_details_http(url: str, non_negotiable: bool = True) -> Optional[
         "price_toman": price_toman,
         "negotiable": 0 if non_negotiable else None,
         "description": description,
-        "posted_at": None,
+        "posted_at": posted_line,
         "scraped_at": now_iso(),
     }
     log_event("detail_http_parsed", url=url, ok=bool(out.get("title")))
     return out
+_RE_OG_TITLE = re.compile(r"<meta[^>]+property=\"og:title\"[^>]+content=\"(.*?)\"", re.I)
+_RE_LD_JSON = re.compile(r"<script[^>]+type=\"application/ld\+json\"[^>]*>([\s\S]*?)</script>", re.I)
+_RE_URL_ABS = re.compile(r"https://divar\.ir/v/[\w%\-_/]+")
+_RE_URL_REL = re.compile(r"/v/[\w%\-_/]+")

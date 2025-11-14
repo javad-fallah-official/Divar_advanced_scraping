@@ -67,3 +67,35 @@ class Database:
         with self.conn.cursor() as cur:
             cur.execute("SELECT 1 FROM posts WHERE url=%s", (url,))
             return cur.fetchone() is not None
+
+    def upsert_posts_bulk(self, posts: list[Dict[str, Any]]) -> tuple[int, int]:
+        if not posts:
+            return 0, 0
+        cols = [
+            "url",
+            "title",
+            "city",
+            "district",
+            "brand",
+            "model_year_jalali",
+            "mileage_km",
+            "color",
+            "price_toman",
+            "negotiable",
+            "description",
+            "posted_at",
+            "scraped_at",
+        ]
+        values = [[p.get(c) for c in cols] for p in posts]
+        set_clause = ", ".join([f"{c}=excluded.{c}" for c in cols if c != "url"]) 
+        sql = f"INSERT INTO posts ({','.join(cols)}) VALUES %s ON CONFLICT (url) DO UPDATE SET {set_clause}"
+        from psycopg2.extras import execute_values
+        from .metrics import Timer, log_event
+        t = Timer()
+        with self.conn.cursor() as cur:
+            execute_values(cur, sql, values)
+        ms = t.ms()
+        log_event("db_upsert_bulk", count=len(posts), ms=ms)
+        # We cannot easily differentiate inserted vs updated without extra queries; approximate by checking existence beforehand.
+        # For accuracy, compute via exists() for each; but that is expensive. Here we return (len(posts), 0) to reflect total processed.
+        return len(posts), 0
