@@ -1,9 +1,0 @@
-numpy>=1.23
-numba>=0.58; python_version<'3.13'
-matplotlib>=3.7
-seaborn>=0.12
-line_profiler>=4.1; python_version<'3.13'
-pytest>=7.3
-pytest-cov>=4.1
-psutil>=5.9
-build>=1.0
