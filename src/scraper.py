@@ -1,6 +1,6 @@
 import logging
 from playwright.async_api import async_playwright, TimeoutError as PWTimeout
-from config import TARGET_URL, USER_AGENT, MAX_SCROLLS
+from .config import TARGET_URL, USER_AGENT, MAX_SCROLLS
 
 LOAD_MORE_SELECTOR = "button[class*='post-list__load-more-btn']"
 

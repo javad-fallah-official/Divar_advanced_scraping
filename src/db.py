@@ -1,5 +1,6 @@
 import asyncpg
-from config import DB
+from asyncpg.types import Json
+from .config import DB
 
 async def init_db() -> None:
     conn = await asyncpg.connect(**DB)
@@ -42,7 +43,7 @@ async def batch_upsert(conn: asyncpg.Connection, rows: list[dict]) -> None:
                 r.get("price"),
                 r.get("description"),
                 r.get("location"),
-                r.get("specs"),
+                Json(r.get("specs")) if r.get("specs") is not None else None,
                 r.get("date_posted"),
                 r.get("raw_html"),
             )

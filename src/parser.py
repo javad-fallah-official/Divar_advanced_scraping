@@ -1,7 +1,8 @@
 from lxml import html
 from urllib.parse import urljoin
 import re
-from utils import id_from_url, persian_to_ascii
+from .utils import id_from_url, persian_to_ascii, SPEC_KEY_MAP, normalize_price
+from datetime import datetime
 
 def extract_ad_hrefs(listing_html: str, base: str = "https://divar.ir") -> list[str]:
     tree = html.fromstring(listing_html)
@@ -31,7 +32,7 @@ def parse_ad_page(html_text: str, url: str) -> dict:
     if p:
         for cand in p:
             if re.search(r"\d", persian_to_ascii(cand)):
-                price = cand.strip()
+                price = normalize_price(cand)
                 break
     date_posted = None
     loc = None
@@ -42,6 +43,13 @@ def parse_ad_page(html_text: str, url: str) -> dict:
         if len(parts) >= 2:
             date_posted = parts[0].strip()
             loc = parts[1].strip()
+    tnodes = tree.xpath("//time/@datetime")
+    if tnodes:
+        iso = tnodes[0].strip()
+        try:
+            date_posted = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        except Exception:
+            pass
     desc = None
     d = tree.xpath("//h2[contains(., 'توضیحات')]/following-sibling::*[1]//text()")
     if d:
@@ -54,9 +62,10 @@ def parse_ad_page(html_text: str, url: str) -> dict:
                 txt = "".join(node.itertext()).strip()
                 specs.setdefault(label, txt)
     normalized = {}
-    normalized["color"] = specs.get("رنگ") or None
-    normalized["year_made"] = specs.get("سال تولید") or specs.get("سال") or None
-    normalized["mileage"] = specs.get("کارکرد") or specs.get("کیلومتر") or None
+    for k, v in specs.items():
+        nk = SPEC_KEY_MAP.get(k)
+        if nk:
+            normalized[nk] = v
     return {
         "id": id_from_url(url),
         "url": url,
@@ -65,6 +74,6 @@ def parse_ad_page(html_text: str, url: str) -> dict:
         "description": desc,
         "location": loc,
         "specs": normalized,
-        "date_posted": None,
+        "date_posted": date_posted,
         "raw_html": html_text,
     }

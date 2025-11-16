@@ -9,3 +9,15 @@ def id_from_url(url: str) -> str | None:
     parsed = urlparse(url)
     segs = parsed.path.rstrip("/").split("/")
     return segs[-1] if segs else None
+
+SPEC_KEY_MAP = {
+    "رنگ": "color",
+    "سال": "year_made",
+    "سال تولید": "year_made",
+    "کارکرد": "mileage",
+    "کیلومتر": "mileage",
+}
+
+def normalize_price(s: str) -> str:
+    ascii_s = persian_to_ascii(s)
+    return ascii_s.strip()
