@@ -19,7 +19,6 @@ def index(request: Request):
 @app.get("/api/posts")
 def list_posts(
     request: Request,
-    source: str = "playwright",  # playwright | lib | both
     city: str | None = None,
     district: str | None = None,
     brand: str | None = None,
@@ -46,36 +45,17 @@ def list_posts(
         "negotiable": negotiable if negotiable in {"nonneg", "unknown"} else None,
     }
 
-    sources: List[str] = []
-    if source == "both":
-        sources = ["playwright", "lib"]
-    elif source == "lib":
-        sources = ["lib"]
-    else:
-        sources = ["playwright"]
-
     items: List[Dict[str, Any]] = []
-    for s in sources:
-        db_path = "data/divar.db" if s == "playwright" else "data/divar_lib.db"
-        try:
-            rows = query_posts_single(db_path, filters, limit=100000)
-            for r in rows:
-                r["source"] = s
-            items.extend(rows)
-        except Exception:
-            # If DB missing, just continue
-            pass
+    try:
+        rows = query_posts_single("", filters, limit=100000)
+        items.extend(rows)
+    except Exception:
+        pass
 
-    # Sort combined by scraped_at desc
     def sort_key(x):
         return x.get("scraped_at") or ""
 
     items.sort(key=sort_key, reverse=True)
-
     total = len(items)
-
-    return JSONResponse({
-        "items": items,
-        "total": total,
-    })
+    return JSONResponse({"items": items, "total": total})
 

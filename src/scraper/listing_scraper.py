@@ -139,8 +139,30 @@ def collect_listing_urls(
                 page.keyboard.press("End")
             except Exception:
                 pass
+            try:
+                page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
+                btn = page.locator("button.post-list__load-more-btn-be092")
+                if not btn or not btn.count():
+                    btn = page.locator("button:has-text('آگهی\u200cهای بیشتر')")
+                if (not btn or not btn.count()):
+                    btn = page.locator("button:has-text('آگهی‌های بیشتر')")
+                if (not btn or not btn.count()):
+                    btn = page.locator("button:has-text('بیشتر')")
+                if btn and btn.count():
+                    b = btn.first
+                    b.scroll_into_view_if_needed()
+                    if b.is_visible() and b.is_enabled():
+                        log_event("listing_load_more_attempt")
+                        b.click(timeout=2500)
+                        try:
+                            page.wait_for_load_state("networkidle", timeout=5000)
+                        except Exception:
+                            pass
+                        log_event("listing_load_more_success")
+            except Exception:
+                pass
             time.sleep(2.0 + (0.5 * (stall_rounds % 3)))
-
+        
             if len(urls) == last_count:
                 stall_rounds += 1
                 log_event("listing_stall", round=stall_rounds, count=len(urls))

@@ -18,6 +18,7 @@ async def scrape_post_details_async(url: str, non_negotiable: bool = True, timeo
     headers = {"User-Agent": ua, "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}
     html = await fetch_text(url, headers=headers)
     if not html:
+        log_event("detail_async_no_html", url=url)
         return None
     title = None
     city, district, posted_line = None, None, None
@@ -56,6 +57,8 @@ async def scrape_post_details_async(url: str, non_negotiable: bool = True, timeo
                                 break
             except Exception:
                 pass
+    if not title:
+        log_event("detail_async_no_title", url=url)
     tree = HTMLParser(html)
     body_text = tree.body.text(separator=" ") if tree.body else ""
     if not title and body_text:
@@ -131,6 +134,8 @@ async def scrape_post_details_async(url: str, non_negotiable: bool = True, timeo
             walk(data2)
         except Exception:
             pass
+    else:
+        log_event("detail_async_no_next_data", url=url)
     if not title:
         return None
     res: Dict[str, Any] = {
@@ -148,6 +153,7 @@ async def scrape_post_details_async(url: str, non_negotiable: bool = True, timeo
         "posted_at": posted_line,
         "scraped_at": now_iso(),
     }
+    if not any([price_toman, brand, model_year_jalali, mileage_km, color]):
+        log_event("detail_async_labels_missing", url=url)
     log_event("detail_async_parsed", url=url, ok=bool(res["title"]))
     return res
-

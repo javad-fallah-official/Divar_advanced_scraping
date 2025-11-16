@@ -4,6 +4,7 @@ from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import asyncio
+import time
 
 from .scraper.listing_scraper import collect_listing_urls
 from .scraper.detail_scraper import scrape_post_details
@@ -33,6 +34,8 @@ def parse_args():
     parser.add_argument("--no-db", dest="no_db", default="true", choices=["true", "false"], help="Skip DB writes in single mode")
     parser.add_argument("--async", dest="use_async", default="false", choices=["true", "false"], help="Use aiohttp+selectolax pipeline")
     parser.add_argument("--concurrency", dest="concurrency", type=int, default=20, help="Async concurrency")
+    parser.add_argument("--async-fallback-playwright", dest="async_fallback", default="false", choices=["true", "false"], help="Retry failed async details with Playwright")
+    parser.add_argument("--listing-mode", dest="listing_mode", default="auto", choices=["auto", "playwright", "api"], help="Choose listing collection strategy")
     return parser.parse_args()
 
 
@@ -42,6 +45,7 @@ def main():
     headless = args.headless.lower() == "true"
     no_db = args.no_db.lower() == "true"
     use_async = args.use_async.lower() == "true"
+    async_fallback = args.async_fallback.lower() == "true"
     # Allow disabling brand filter with --brand none|all or empty string
     brand_arg = (args.brand or "").strip().lower()
     brand = None if brand_arg in {"", "none", "all"} else args.brand
@@ -62,26 +66,59 @@ def main():
     if args.single_url and use_async:
         async def run_single():
             await init_client(concurrency=args.concurrency, timeout=float(args.http_timeout), headers={"User-Agent": "Mozilla/5.0"})
-            d = await scrape_post_details_async(args.single_url.strip(), non_negotiable=non_negotiable, timeout=float(args.http_timeout))
-            await close_client()
-            if not d:
-                print("Failed to scrape details for:", args.single_url.strip())
-                return
-            print(json.dumps(d, ensure_ascii=False))
-            if not no_db:
-                db = Database()
-                db.upsert_post(d)
+            try:
+                d = await scrape_post_details_async(args.single_url.strip(), non_negotiable=non_negotiable, timeout=float(args.http_timeout))
+                if not d:
+                    print("Failed to scrape details for:", args.single_url.strip())
+                    return
+                print(json.dumps(d, ensure_ascii=False))
+                if not no_db:
+                    db = Database()
+                    db.upsert_post(d)
+            finally:
+                await close_client()
         asyncio.run(run_single())
         return
 
     print("Collecting listing URLs...")
     if use_async:
-        async def run_list():
-            await init_client(concurrency=args.concurrency, timeout=float(args.http_timeout), headers={"User-Agent": "Mozilla/5.0"})
-            ls = await collect_listing_urls_async(args.city, args.category, brand, non_negotiable, max_items=args.max_items)
-            await close_client()
-            return ls
-        listing_urls = asyncio.run(run_list())
+        mode = args.listing_mode
+        if mode == "playwright":
+            listing_urls = collect_listing_urls(
+                city=args.city,
+                category=args.category,
+                brand=brand,
+                non_negotiable=non_negotiable,
+                max_items=args.max_items,
+                headless=headless,
+            )
+        elif mode == "api":
+            async def run_list():
+                await init_client(concurrency=args.concurrency, timeout=float(args.http_timeout), headers={"User-Agent": "Mozilla/5.0"})
+                try:
+                    ls = await collect_listing_urls_async(args.city, args.category, brand, non_negotiable, max_items=args.max_items)
+                    return ls
+                finally:
+                    await close_client()
+            listing_urls = asyncio.run(run_list())
+        else:
+            async def run_list():
+                await init_client(concurrency=args.concurrency, timeout=float(args.http_timeout), headers={"User-Agent": "Mozilla/5.0"})
+                try:
+                    ls = await collect_listing_urls_async(args.city, args.category, brand, non_negotiable, max_items=args.max_items)
+                    return ls
+                finally:
+                    await close_client()
+            listing_urls = asyncio.run(run_list())
+            if len(listing_urls) < min(args.max_items, 300):
+                listing_urls = collect_listing_urls(
+                    city=args.city,
+                    category=args.category,
+                    brand=brand,
+                    non_negotiable=non_negotiable,
+                    max_items=args.max_items,
+                    headless=headless,
+                )
     else:
         listing_urls = collect_listing_urls(
             city=args.city,
@@ -102,31 +139,46 @@ def main():
     bulk_size = max(1, args.bulk_size)
     http_timeout = float(args.http_timeout)
     buffer = []
+    t0 = time.perf_counter()
     if use_async:
         async def run_details():
+            nonlocal inserted, updated, skipped
             await init_client(concurrency=args.concurrency, timeout=http_timeout, headers={"User-Agent": "Mozilla/5.0"})
-            async def one(u):
-                return await scrape_post_details_async(u, non_negotiable=non_negotiable, timeout=http_timeout)
-            tasks = [one(u) for u in listing_urls]
-            done = 0
-            for coro in asyncio.as_completed(tasks):
-                d = await coro
-                if not d:
-                    nonlocal skipped
-                    skipped += 1
-                else:
-                    buffer.append(d)
-                    if len(buffer) >= bulk_size:
-                        res_ins, res_upd = db.upsert_posts_bulk(buffer)
-                        nonlocal inserted, updated
-                        inserted += res_ins
-                        updated += res_upd
-                        buffer.clear()
-                done += 1
-                if (inserted + updated + skipped) % 20 == 0:
-                    m = sample_system()
-                    log_event("system_sample", **m)
-            await close_client()
+            try:
+                async def one(u):
+                    d = await scrape_post_details_async(u, non_negotiable=non_negotiable, timeout=http_timeout)
+                    return u, d
+                tasks = [asyncio.create_task(one(u)) for u in listing_urls]
+                pbar = tqdm(total=len(tasks))
+                for t in asyncio.as_completed(tasks):
+                    url, d = await t
+                    if not d:
+                        if async_fallback:
+                            log_event("detail_fallback_start", url=url)
+                            loop = asyncio.get_running_loop()
+                            d2 = await loop.run_in_executor(None, lambda: scrape_post_details(url, headless, non_negotiable, http_timeout))
+                            if d2:
+                                buffer.append(d2)
+                                log_event("detail_fallback_result", url=url, ok=True)
+                            else:
+                                skipped += 1
+                                log_event("detail_fallback_result", url=url, ok=False)
+                        else:
+                            skipped += 1
+                    else:
+                        buffer.append(d)
+                        if len(buffer) >= bulk_size:
+                            res_ins, res_upd = db.upsert_posts_bulk(buffer)
+                            inserted += res_ins
+                            updated += res_upd
+                            buffer.clear()
+                    if (inserted + updated + skipped) % 20 == 0:
+                        m = sample_system()
+                        log_event("system_sample", **m)
+                    pbar.update(1)
+                pbar.close()
+            finally:
+                await close_client()
         asyncio.run(run_details())
     else:
         workers = max(1, args.workers)
@@ -158,6 +210,10 @@ def main():
     print(
         f"Done. Inserted: {inserted}, Updated: {updated}, Skipped: {skipped}. DB: postgres"
     )
+    elapsed = time.perf_counter() - t0
+    total = inserted + updated
+    per_min = (total / elapsed) * 60 if elapsed > 0 else 0.0
+    print(f"Elapsed: {elapsed:.2f}s, Throughput: {per_min:.2f} items/min")
     log_event("run_done", inserted=inserted, updated=updated, skipped=skipped)
 
 

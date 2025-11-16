@@ -28,10 +28,12 @@ async def collect_listing_urls_async(city: str, category: str, brand: Optional[s
         return []
     urls: set[str] = set()
     tree = HTMLParser(html)
+    anchor_count = 0
     for a in tree.css("a[href]"):
         href = a.attributes.get("href")
         if not href:
             continue
+        anchor_count += 1
         if href.startswith("/v/"):
             urls.add(urljoin("https://divar.ir", href))
         elif href.startswith("https://divar.ir/v/"):
@@ -49,6 +51,6 @@ async def collect_listing_urls_async(city: str, category: str, brand: Optional[s
     out = list(urls)
     if len(out) > max_items:
         out = out[:max_items]
+    log_event("listing_async_page_parsed", anchors=anchor_count, has_next=bool(s and s.text()), url_count=len(out))
     log_event("listing_async_done", url_count=len(out))
     return out
-

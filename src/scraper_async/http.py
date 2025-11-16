@@ -10,7 +10,13 @@ async def init_client(concurrency: int = 20, timeout: float = 10.0, headers: dic
     _sem = asyncio.Semaphore(concurrency)
     t = aiohttp.ClientTimeout(total=timeout)
     conn = aiohttp.TCPConnector(limit=concurrency, force_close=False, enable_cleanup_closed=True)
-    _session = aiohttp.ClientSession(timeout=t, connector=conn, headers=headers or {})
+    default_headers = {
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "fa-IR,fa;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Referer": "https://divar.ir/",
+    }
+    merged = default_headers | (headers or {})
+    _session = aiohttp.ClientSession(timeout=t, connector=conn, headers=merged)
     return _session
 
 
@@ -38,4 +44,3 @@ async def fetch_text(url: str, method: str = "GET", json: dict | None = None, he
             except Exception:
                 continue
     return None
-
