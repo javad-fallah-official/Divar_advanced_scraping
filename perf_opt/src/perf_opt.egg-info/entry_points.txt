@@ -1,2 +1,0 @@
-[console_scripts]
-perf_opt = perf_opt.cli:main

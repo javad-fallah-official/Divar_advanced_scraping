@@ -1,2 +1,1 @@
-"""Divar advanced scraping package."""
-
+__all__ = []
